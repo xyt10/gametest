@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>雷霆战机 - Thunder Fighter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            touch-action: none;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            max-width: 100vw;
+            max-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: radial-gradient(circle at center, rgba(0, 100, 200, 0.1) 0%, transparent 70%);
+        }
+
+        #gameCanvas {
+            display: block;
+            border: 3px solid rgba(0, 150, 255, 0.6);
+            border-radius: 8px;
+            box-shadow:
+                0 0 30px rgba(0, 150, 255, 0.4),
+                inset 0 0 20px rgba(0, 150, 255, 0.1);
+            max-width: 100%;
+            max-height: 100%;
+            width: auto;
+            height: auto;
+            transition: box-shadow 0.3s ease;
+        }
+
+        #gameCanvas:hover {
+            box-shadow:
+                0 0 40px rgba(0, 150, 255, 0.6),
+                inset 0 0 25px rgba(0, 150, 255, 0.2);
+        }
+
+        #loading {
+            position: absolute;
+            color: #fff;
+            font-size: 24px;
+            text-align: center;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 20px 40px;
+            border-radius: 12px;
+            border: 2px solid rgba(0, 150, 255, 0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        #loading::after {
+            content: '';
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            margin-top: 10px;
+            border: 3px solid rgba(0, 150, 255, 0.3);
+            border-top-color: #00aaff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            #gameCanvas {
+                border-width: 2px;
+                border-radius: 6px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            #loading {
+                font-size: 18px;
+                padding: 15px 30px;
+            }
+        }
+
+        /* 横屏提示 */
+        #orientationWarning {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            text-align: center;
+            z-index: 20;
+            border: 2px solid rgba(255, 100, 100, 0.8);
+            display: none;
+        }
+
+        #orientationWarning h2 {
+            margin-bottom: 15px;
+            color: #ff6666;
+        }
+
+        #orientationWarning p {
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        /* 移动端横屏适配 */
+        @media (orientation: landscape) and (max-width: 768px) {
+            #orientationWarning {
+                display: none;
+            }
+        }
+
+        /* 性能优化：减少重绘 */
+        .fps-counter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 14px;
+            font-family: monospace;
+            z-index: 15;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="loading">加载中...</div>
+        <canvas id="gameCanvas" width="480" height="800"></canvas>
+        <div id="orientationWarning">
+            <h2>请竖屏游戏</h2>
+            <p>为了获得最佳游戏体验</p>
+            <p>请将设备竖直放置</p>
+        </div>
+        <div class="fps-counter">FPS: <span id="fpsValue">0</span></div>
+    </div>
+
+    <!-- 游戏脚本 -->
+    <script src="src/config/GameConfig.js"></script>
+    <script src="src/utils/ObjectPool.js"></script>
+    <script src="src/systems/AudioManager.js"></script>
+    <script src="src/systems/ParticleSystem.js"></script>
+    <script src="src/entities/Player.js"></script>
+    <script src="src/entities/Enemy.js"></script>
+    <script src="src/entities/Bullet.js"></script>
+    <script src="src/entities/Item.js"></script>
+    <script src="src/entities/Boss.js"></script>
+    <script src="src/entities/Wingman.js"></script>
+    <script src="src/systems/EnemySpawner.js"></script>
+    <script src="src/systems/CollisionManager.js"></script>
+    <script src="src/systems/UpgradeSystem.js"></script>
+    <script src="src/ui/GameHUD.js"></script>
+    <script src="src/ui/MainMenu.js"></script>
+    <script src="src/ui/ShipSelection.js"></script>
+    <script src="src/scenes/GameScene.js"></script>
+    <script src="src/Main.js"></script>
+</body>
+</html>
