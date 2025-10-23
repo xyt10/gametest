@@ -388,7 +388,6 @@ class CollisionManager {
     spawnWingman(config) {
         const player = this.gameScene.player;
         const wingmen = this.gameScene.wingmen;
-        const wingmanType = config.WINGMAN_TYPE || 'STANDARD';
 
         // 最多2个僚机（左右各一个）
         if (wingmen.length >= 2) {
@@ -407,6 +406,22 @@ class CollisionManager {
             position = 'LEFT';
         } else if (hasRight && !hasLeft) {
             position = 'LEFT';
+        }
+
+        let wingmanType = config.WINGMAN_TYPE;
+        if (!wingmanType) {
+            const preferences = this.gameScene.selectedWingmanTypes || {};
+            if (!hasLeft && preferences.LEFT) {
+                wingmanType = preferences.LEFT;
+            } else if (!hasRight && preferences.RIGHT) {
+                wingmanType = preferences.RIGHT;
+            } else {
+                wingmanType = this.gameScene.preferredWingmanType || 'STANDARD';
+            }
+        }
+
+        if (!wingmanType) {
+            wingmanType = 'STANDARD';
         }
 
         // 创建僚机

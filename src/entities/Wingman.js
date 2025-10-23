@@ -47,6 +47,14 @@ class Wingman {
         this.color = config.COLOR;
         this.name = config.NAME;
         this.autoAim = config.AUTO_AIM !== false; // 默认自动瞄准
+        this.invincible = config.INVINCIBLE === true;
+        this.firePattern = (config.FIRE_PATTERN || 'SINGLE').toUpperCase();
+        this.projectileCount = Math.max(1, config.PROJECTILES || 1);
+        this.projectileSpacing = config.PROJECTILE_SPACING || 16;
+        this.spreadAngle = config.SPREAD_ANGLE || Math.PI / 12;
+        this.forwardOffset = config.PROJECTILE_FORWARD_OFFSET || 0;
+        this.bulletSpeedOverride = config.BULLET_SPEED || null;
+        this.engineColor = config.ENGINE_COLOR || this.color;
     }
 
     /**
@@ -74,7 +82,8 @@ class Wingman {
         }
 
         // 自动射击
-        return this.autoShoot(enemies, currentTime);
+        const bullets = this.autoShoot(enemies, currentTime);
+        return bullets && bullets.length > 0 ? bullets : null;
     }
 
     /**
@@ -106,7 +115,8 @@ class Wingman {
 
         if (target) {
             this.lastFireTime = currentTime;
-            return this.shoot(target);
+            const bullets = this.shoot(target);
+            return bullets && bullets.length > 0 ? bullets : null;
         }
 
         return null;
@@ -116,27 +126,89 @@ class Wingman {
      * 射击
      */
     shoot(target) {
-        let vx = 0;
-        let vy = -GameConfig.BULLET.SPEED;
+        const bullets = [];
+        const speed = this.getBulletSpeed();
 
-        // 自动瞄准目标
+        let dirX = 0;
+        let dirY = -1;
+
         if (this.autoAim && target) {
             const dx = target.x - this.x;
             const dy = target.y - this.y;
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance > 0) {
-                const speed = GameConfig.BULLET.SPEED;
-                vx = (dx / distance) * speed;
-                vy = (dy / distance) * speed;
+                dirX = dx / distance;
+                dirY = dy / distance;
             }
         }
 
+        const baseAngle = Math.atan2(dirY, dirX);
+
+        switch (this.firePattern) {
+            case 'DUAL': {
+                const count = Math.max(2, this.projectileCount);
+                const half = (count - 1) / 2;
+                const spacing = this.projectileSpacing || 16;
+                for (let i = 0; i < count; i++) {
+                    const lateralOffset = (i - half) * spacing;
+                    bullets.push(this.createBulletFromAngle(baseAngle, speed, lateralOffset, this.forwardOffset));
+                }
+                break;
+            }
+            case 'SPREAD': {
+                const count = Math.max(2, this.projectileCount);
+                const spread = this.spreadAngle || Math.PI / 8;
+                const step = count > 1 ? spread / (count - 1) : 0;
+                const startAngle = baseAngle - spread / 2;
+                for (let i = 0; i < count; i++) {
+                    const angle = startAngle + step * i;
+                    bullets.push(this.createBulletFromAngle(angle, speed, 0, this.forwardOffset));
+                }
+                break;
+            }
+            default: {
+                bullets.push(this.createBulletFromAngle(baseAngle, speed, 0, this.forwardOffset));
+                break;
+            }
+        }
+
+        return bullets;
+    }
+
+    /**
+     * 计算当前子弹飞行速度
+     */
+    getBulletSpeed() {
+        if (this.bulletSpeedOverride) {
+            return this.bulletSpeedOverride;
+        }
+
+        const typeConfig = GameConfig.BULLET_TYPES[this.bulletType];
+        if (typeConfig && typeConfig.SPEED) {
+            return typeConfig.SPEED;
+        }
+
+        return GameConfig.BULLET.SPEED;
+    }
+
+    /**
+     * 根据角度创建子弹
+     */
+    createBulletFromAngle(angle, speed, lateralOffset = 0, forwardOffset = 0) {
+        const dirX = Math.cos(angle);
+        const dirY = Math.sin(angle);
+        const perpX = -dirY;
+        const perpY = dirX;
+
+        const spawnX = this.x + dirX * forwardOffset + perpX * lateralOffset;
+        const spawnY = this.y - this.height / 2 + dirY * forwardOffset + perpY * lateralOffset;
+
         return new Bullet(
-            this.x,
-            this.y - this.height / 2,
-            vx,
-            vy,
+            spawnX,
+            spawnY,
+            dirX * speed,
+            dirY * speed,
             this.damage,
             'player',
             this.bulletType
@@ -147,6 +219,10 @@ class Wingman {
      * 受到伤害
      */
     takeDamage(damage) {
+        if (this.invincible) {
+            return;
+        }
+
         this.health -= damage;
         if (this.health <= 0) {
             this.health = 0;
@@ -184,7 +260,7 @@ class Wingman {
             particleSystem.createEngineTrail(
                 this.x,
                 this.y + this.height / 2 + 5,
-                '#00aaff'
+                this.engineColor
             );
         }
 

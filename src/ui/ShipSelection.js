@@ -15,21 +15,63 @@ class ShipSelection {
         // 战机列表（按顺序排列）
         this.shipTypes = ['STANDARD', 'ASSAULT', 'TANK', 'INTERCEPTOR', 'HUNTER'];
 
+        // 僚机选择状态
+        this.wingmanTypes = [...Object.keys(GameConfig.WINGMAN_TYPES), 'NONE'];
+        this.selectedWingmanTypes = {
+            LEFT: 'STANDARD',
+            RIGHT: null,
+        };
+        this.activeWingmanSlot = 'LEFT';
+        this.hoveredWingmanType = null;
+        this.hoveredWingmanSlot = null;
+
         // 布局配置
         this.cardWidth = 85;
         this.cardHeight = 140;
         this.cardSpacing = 10;
         this.startX = (GameConfig.CANVAS_WIDTH - (this.cardWidth * 5 + this.cardSpacing * 4)) / 2;
-        this.startY = 200;
+        this.startY = 120;
+
+        // 僚机卡片布局
+        this.wingmanCardWidth = 70;
+        this.wingmanCardHeight = 110;
+        this.wingmanCardSpacing = 12;
+        this.wingmanColumns = 4;
+        this.slotButtonWidth = 120;
+        this.slotButtonHeight = 32;
+        this.slotButtonY = this.startY + this.cardHeight + 20;
+        this.wingmanSlotButtons = [
+            {
+                slot: 'LEFT',
+                label: '左僚机',
+                x: GameConfig.CANVAS_WIDTH / 2 - this.slotButtonWidth - 10,
+                y: this.slotButtonY,
+                width: this.slotButtonWidth,
+                height: this.slotButtonHeight,
+            },
+            {
+                slot: 'RIGHT',
+                label: '右僚机',
+                x: GameConfig.CANVAS_WIDTH / 2 + 10,
+                y: this.slotButtonY,
+                width: this.slotButtonWidth,
+                height: this.slotButtonHeight,
+            }
+        ];
+        this.wingmanStartX = (GameConfig.CANVAS_WIDTH - (this.wingmanColumns * this.wingmanCardWidth + (this.wingmanColumns - 1) * this.wingmanCardSpacing)) / 2;
+        this.wingmanStartY = this.slotButtonY + this.slotButtonHeight + 20;
 
         // 按钮
         this.confirmButton = {
             x: GameConfig.CANVAS_WIDTH / 2 - 80,
             y: 550,
             width: 160,
-            height: 50,
+            height: 45,
             text: '确认选择'
         };
+
+        // 提示位置
+        this.hintY = 630;
 
         // 动画
         this.animationTime = 0;
@@ -87,6 +129,26 @@ class ShipSelection {
                 }
             });
 
+            // 检查僚机槽位按钮
+            this.wingmanSlotButtons.forEach((button) => {
+                if (x >= button.x && x <= button.x + button.width &&
+                    y >= button.y && y <= button.y + button.height) {
+                    this.activeWingmanSlot = button.slot;
+                    console.log(`激活僚机槽位: ${button.slot}`);
+                }
+            });
+
+            // 检查僚机卡片
+            this.wingmanTypes.forEach((type, index) => {
+                const rect = this.getWingmanCardRect(index);
+                if (x >= rect.x && x <= rect.x + rect.width &&
+                    y >= rect.y && y <= rect.y + rect.height) {
+                    const assignedType = type === 'NONE' ? null : type;
+                    this.selectedWingmanTypes[this.activeWingmanSlot] = assignedType;
+                    console.log(`为${this.activeWingmanSlot}槽位选择僚机: ${assignedType || '无僚机'}`);
+                }
+            });
+
             // 检查确认按钮点击
             if (x >= this.confirmButton.x && x <= this.confirmButton.x + this.confirmButton.width &&
                 y >= this.confirmButton.y && y <= this.confirmButton.y + this.confirmButton.height) {
@@ -106,6 +168,23 @@ class ShipSelection {
                 if (x >= cardX && x <= cardX + this.cardWidth &&
                     y >= cardY && y <= cardY + this.cardHeight) {
                     this.hoveredShipType = type;
+                }
+            });
+
+            this.hoveredWingmanType = null;
+            this.hoveredWingmanSlot = null;
+            this.wingmanSlotButtons.forEach((button) => {
+                if (x >= button.x && x <= button.x + button.width &&
+                    y >= button.y && y <= button.y + button.height) {
+                    this.hoveredWingmanSlot = button.slot;
+                }
+            });
+
+            this.wingmanTypes.forEach((type, index) => {
+                const rect = this.getWingmanCardRect(index);
+                if (x >= rect.x && x <= rect.x + rect.width &&
+                    y >= rect.y && y <= rect.y + rect.height) {
+                    this.hoveredWingmanType = type;
                 }
             });
 
@@ -231,8 +310,19 @@ class ShipSelection {
         // 战机卡片
         this.renderShipCards();
 
+        // 僚机槽位与卡片
+        this.renderWingmanSlotButtons();
+        this.renderWingmanCards();
+
+        // 详细信息面板布局
+        const panelMetrics = this.computeDetailPanelMetrics();
+
+        // 更新确认按钮和提示位置
+        this.confirmButton.y = panelMetrics.y + panelMetrics.height + 15;
+        this.hintY = this.confirmButton.y + this.confirmButton.height + 15;
+
         // 详细信息面板
-        this.renderDetailPanel();
+        this.renderDetailPanel(panelMetrics);
 
         // 确认按钮
         this.renderConfirmButton();
@@ -261,13 +351,13 @@ class ShipSelection {
         // 发光效果
         ctx.shadowBlur = 20;
         ctx.shadowColor = '#00ffff';
-        ctx.fillText('选择你的战机', GameConfig.CANVAS_WIDTH / 2, 80);
+        ctx.fillText('选择你的战机与僚机', GameConfig.CANVAS_WIDTH / 2, 80);
         ctx.shadowBlur = 0;
 
         // 副标题
         ctx.fillStyle = '#aaaaaa';
         ctx.font = '16px Arial';
-        ctx.fillText('每种战机都有独特的属性和武器', GameConfig.CANVAS_WIDTH / 2, 120);
+        ctx.fillText('为战机与僚机搭配不同武器风格', GameConfig.CANVAS_WIDTH / 2, 120);
     }
 
     /**
@@ -398,17 +488,219 @@ class ShipSelection {
     }
 
     /**
+     * 获取僚机卡片行数
+     */
+    getWingmanRows() {
+        return Math.ceil(this.wingmanTypes.length / this.wingmanColumns);
+    }
+
+    /**
+     * 计算僚机卡片矩形区域
+     */
+    getWingmanCardRect(index) {
+        const col = index % this.wingmanColumns;
+        const row = Math.floor(index / this.wingmanColumns);
+        const x = this.wingmanStartX + col * (this.wingmanCardWidth + this.wingmanCardSpacing);
+        const y = this.wingmanStartY + row * (this.wingmanCardHeight + this.wingmanCardSpacing);
+
+        return {
+            x,
+            y,
+            width: this.wingmanCardWidth,
+            height: this.wingmanCardHeight,
+        };
+    }
+
+    /**
+     * 计算详情面板布局
+     */
+    computeDetailPanelMetrics() {
+        const rows = this.getWingmanRows();
+        const panelX = 40;
+        const panelWidth = GameConfig.CANVAS_WIDTH - 80;
+        const panelHeight = 120;
+        const gridHeight = rows * this.wingmanCardHeight + Math.max(0, (rows - 1) * this.wingmanCardSpacing);
+        const panelY = this.wingmanStartY + gridHeight + 30;
+
+        return { x: panelX, y: panelY, width: panelWidth, height: panelHeight };
+    }
+
+    /**
+     * 渲染僚机槽位按钮
+     */
+    renderWingmanSlotButtons() {
+        const ctx = this.ctx;
+
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+
+        this.wingmanSlotButtons.forEach((button) => {
+            const isActive = this.activeWingmanSlot === button.slot;
+            const isHovered = this.hoveredWingmanSlot === button.slot;
+
+            const gradient = ctx.createLinearGradient(button.x, button.y, button.x, button.y + button.height);
+            if (isActive) {
+                gradient.addColorStop(0, 'rgba(0, 200, 255, 0.6)');
+                gradient.addColorStop(1, 'rgba(0, 120, 200, 0.9)');
+            } else if (isHovered) {
+                gradient.addColorStop(0, 'rgba(120, 120, 120, 0.6)');
+                gradient.addColorStop(1, 'rgba(60, 60, 60, 0.9)');
+            } else {
+                gradient.addColorStop(0, 'rgba(60, 60, 60, 0.6)');
+                gradient.addColorStop(1, 'rgba(30, 30, 30, 0.9)');
+            }
+
+            ctx.fillStyle = gradient;
+            this.roundRect(ctx, button.x, button.y, button.width, button.height, 10);
+            ctx.fill();
+
+            ctx.lineWidth = isActive ? 3 : 2;
+            ctx.strokeStyle = isActive ? '#00ffff' : '#555555';
+            this.roundRect(ctx, button.x, button.y, button.width, button.height, 10);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(button.label, button.x + button.width / 2, button.y + button.height / 2 + 1);
+        });
+    }
+
+    /**
+     * 渲染僚机卡片
+     */
+    renderWingmanCards() {
+        const ctx = this.ctx;
+
+        this.wingmanTypes.forEach((type, index) => {
+            const rect = this.getWingmanCardRect(index);
+            const config = type === 'NONE' ? null : GameConfig.WINGMAN_TYPES[type];
+            const assignedSlots = type === 'NONE'
+                ? []
+                : ['LEFT', 'RIGHT'].filter((slot) => {
+                    const selected = this.selectedWingmanTypes[slot];
+                    return selected === type;
+                });
+            const isActiveSelection = (this.selectedWingmanTypes[this.activeWingmanSlot] || 'NONE') === type;
+            const isHovered = this.hoveredWingmanType === type;
+
+            ctx.save();
+            ctx.translate(rect.x, rect.y);
+
+            const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
+            if (config) {
+                gradient.addColorStop(0, `${config.COLOR}55`);
+                gradient.addColorStop(1, `${config.COLOR}aa`);
+            } else {
+                gradient.addColorStop(0, 'rgba(80, 80, 80, 0.4)');
+                gradient.addColorStop(1, 'rgba(40, 40, 40, 0.7)');
+            }
+            ctx.fillStyle = gradient;
+            this.roundRect(ctx, 0, 0, rect.width, rect.height, 8);
+            ctx.fill();
+
+            const borderColor = isActiveSelection
+                ? '#00ffff'
+                : (assignedSlots.length > 0 ? '#ffffff' : (isHovered ? '#bbbbbb' : '#555555'));
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = isActiveSelection ? 3 : 2;
+            this.roundRect(ctx, 0, 0, rect.width, rect.height, 8);
+            ctx.stroke();
+
+            // 绘制僚机图标
+            this.renderWingmanIcon(ctx, config, rect.width / 2, 32);
+
+            // 名称
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(config ? config.NAME : '无僚机', rect.width / 2, 68);
+
+            ctx.font = '10px Arial';
+            ctx.fillStyle = '#cccccc';
+            if (config) {
+                ctx.fillText(`火力: ${config.DAMAGE}`, rect.width / 2, 85);
+                ctx.fillText(`${config.FIRE_RATE}ms`, rect.width / 2, 100);
+            } else {
+                ctx.fillText('槽位将保持空置', rect.width / 2, 90);
+            }
+
+            // 已分配槽位标记
+            this.renderWingmanBadges(ctx, assignedSlots, rect.width);
+
+            ctx.restore();
+        });
+    }
+
+    /**
+     * 渲染僚机图标
+     */
+    renderWingmanIcon(ctx, config, x, y) {
+        if (!config) {
+            ctx.strokeStyle = '#888888';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 18, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x - 12, y - 12);
+            ctx.lineTo(x + 12, y + 12);
+            ctx.stroke();
+            return;
+        }
+
+        ctx.fillStyle = config.COLOR;
+        ctx.beginPath();
+        ctx.ellipse(x, y, 18, 12, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#001122';
+        ctx.beginPath();
+        ctx.ellipse(x, y, 8, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 引擎光
+        ctx.fillStyle = config.ENGINE_COLOR || '#00ffff';
+        ctx.beginPath();
+        ctx.arc(x, y + 10, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    /**
+     * 绘制僚机槽位徽章
+     */
+    renderWingmanBadges(ctx, slots, cardWidth) {
+        ctx.font = 'bold 10px Arial';
+        ctx.textAlign = 'center';
+
+        slots.forEach((slot, index) => {
+            const badgeX = cardWidth - 18 - index * 22;
+            const badgeY = 12;
+
+            ctx.fillStyle = slot === 'LEFT' ? '#00ffff' : '#ff66ff';
+            ctx.beginPath();
+            ctx.arc(badgeX, badgeY, 10, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#001122';
+            ctx.fillText(slot === 'LEFT' ? 'L' : 'R', badgeX, badgeY + 3);
+        });
+    }
+
+    /**
      * 渲染详细信息面板
      */
-    renderDetailPanel() {
+    renderDetailPanel(panel) {
         const ctx = this.ctx;
-        const config = GameConfig.SHIP_TYPES[this.selectedShipType];
-        const bulletConfig = GameConfig.BULLET_TYPES[config.BULLET_TYPE];
+        const shipConfig = GameConfig.SHIP_TYPES[this.selectedShipType];
+        const shipBulletConfig = GameConfig.BULLET_TYPES[shipConfig.BULLET_TYPE];
+        const activeSlot = this.activeWingmanSlot;
+        const activeType = this.selectedWingmanTypes[activeSlot];
+        const wingmanConfig = activeType ? GameConfig.WINGMAN_TYPES[activeType] : null;
+        const wingmanBulletConfig = wingmanConfig && GameConfig.BULLET_TYPES[wingmanConfig.BULLET_TYPE];
 
-        const panelX = 40;
-        const panelY = 380;
-        const panelWidth = GameConfig.CANVAS_WIDTH - 80;
-        const panelHeight = 140;
+        const panelX = panel.x;
+        const panelY = panel.y;
+        const panelWidth = panel.width;
+        const panelHeight = panel.height;
 
         // 面板背景
         ctx.fillStyle = 'rgba(0, 50, 100, 0.7)';
@@ -420,37 +712,78 @@ class ShipSelection {
         this.roundRect(ctx, panelX, panelY, panelWidth, panelHeight, 10);
         ctx.stroke();
 
-        // 战机名称
+        const innerPadding = 20;
+        const columnWidth = (panelWidth - innerPadding * 3) / 2;
+        const columnY = panelY + innerPadding;
+
+        // 战机信息
+        const shipX = panelX + innerPadding;
         ctx.fillStyle = '#00ffff';
-        ctx.font = 'bold 20px Arial';
+        ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'left';
-        ctx.fillText(config.NAME, panelX + 15, panelY + 25);
+        ctx.fillText(shipConfig.NAME, shipX, columnY + 10);
 
-        // 描述
         ctx.fillStyle = '#ffffff';
-        ctx.font = '14px Arial';
-        ctx.fillText(config.DESC, panelX + 15, panelY + 50);
-
-        // 详细属性
-        ctx.font = '12px Arial';
-        const stats = [
-            `生命值: ${config.MAX_HEALTH}`,
-            `速度: ${config.SPEED}`,
-            `射速: ${config.FIRE_RATE}ms`,
-            `伤害倍率: ${config.DAMAGE_MULTIPLIER}x`
-        ];
+        ctx.font = '13px Arial';
+        ctx.fillText(shipConfig.DESC, shipX, columnY + 35);
 
         ctx.fillStyle = '#aaaaaa';
-        stats.forEach((stat, index) => {
-            const col = index % 2;
+        ctx.font = '12px Arial';
+        const shipStats = [
+            `生命值: ${shipConfig.MAX_HEALTH}`,
+            `速度: ${shipConfig.SPEED}`,
+            `射速: ${shipConfig.FIRE_RATE}ms`,
+            `伤害倍率: ${shipConfig.DAMAGE_MULTIPLIER}x`
+        ];
+
+        shipStats.forEach((stat, index) => {
             const row = Math.floor(index / 2);
-            ctx.fillText(stat, panelX + 15 + col * 200, panelY + 75 + row * 20);
+            const col = index % 2;
+            ctx.fillText(stat, shipX + col * (columnWidth / 2 + 20), columnY + 60 + row * 18);
         });
 
-        // 武器类型
         ctx.fillStyle = '#ffaa00';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText(`武器: ${bulletConfig.NAME}`, panelX + 15, panelY + 120);
+        ctx.font = 'bold 13px Arial';
+        ctx.fillText(`武器: ${shipBulletConfig.NAME}`, shipX, columnY + 110);
+
+        // 僚机信息
+        const wingmanX = panelX + innerPadding * 2 + columnWidth;
+        const slotLabel = this.getWingmanSlotLabel(activeSlot);
+
+        ctx.fillStyle = wingmanConfig ? '#ff66ff' : '#888888';
+        ctx.font = 'bold 18px Arial';
+        ctx.fillText(`${slotLabel}`, wingmanX, columnY + 10);
+
+        if (wingmanConfig) {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(wingmanConfig.NAME, wingmanX, columnY + 35);
+
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '12px Arial';
+            const wingmanStats = [
+                `生命值: ${wingmanConfig.HEALTH}`,
+                `火力: ${wingmanConfig.DAMAGE}`,
+                `射速: ${wingmanConfig.FIRE_RATE}ms`,
+                `模式: ${this.getFirePatternLabel(wingmanConfig.FIRE_PATTERN)}`
+            ];
+
+            wingmanStats.forEach((stat, index) => {
+                ctx.fillText(stat, wingmanX, columnY + 60 + index * 18);
+            });
+
+            if (wingmanBulletConfig) {
+                ctx.fillStyle = '#ffaa00';
+                ctx.font = 'bold 13px Arial';
+                ctx.fillText(`子弹: ${wingmanBulletConfig.NAME}`, wingmanX, columnY + 135);
+            }
+        } else {
+            ctx.fillStyle = '#cccccc';
+            ctx.font = '13px Arial';
+            ctx.fillText('当前槽位未配置僚机', wingmanX, columnY + 35);
+            ctx.font = '12px Arial';
+            ctx.fillText('选择下方卡片以添加僚机', wingmanX, columnY + 60);
+        }
     }
 
     /**
@@ -505,7 +838,28 @@ class ShipSelection {
         ctx.fillStyle = '#888888';
         ctx.font = '12px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('点击战机卡片查看详情，点击确认按钮开始游戏', GameConfig.CANVAS_WIDTH / 2, 630);
+        ctx.fillText('选择战机并为左右僚机配置阵容，点击确认按钮开始游戏', GameConfig.CANVAS_WIDTH / 2, this.hintY);
+    }
+
+    /**
+     * 获取僚机槽位标签
+     */
+    getWingmanSlotLabel(slot) {
+        return slot === 'LEFT' ? '左僚机' : '右僚机';
+    }
+
+    /**
+     * 获取火力模式说明
+     */
+    getFirePatternLabel(pattern) {
+        switch ((pattern || 'SINGLE').toUpperCase()) {
+            case 'DUAL':
+                return '双联射击';
+            case 'SPREAD':
+                return '散射齐发';
+            default:
+                return '单发射击';
+        }
     }
 
     /**
@@ -572,6 +926,43 @@ class ShipSelection {
      */
     getSelectedShip() {
         return this.selectedShipType;
+    }
+
+    /**
+     * 设置默认的战机类型
+     */
+    setSelectedShip(type) {
+        if (this.shipTypes.includes(type)) {
+            this.selectedShipType = type;
+        }
+    }
+
+    /**
+     * 获取僚机配置
+     */
+    getSelectedWingmen() {
+        return { ...this.selectedWingmanTypes };
+    }
+
+    /**
+     * 设置默认的僚机配置
+     */
+    setSelectedWingmen(selection = {}) {
+        const applySelection = (slot) => {
+            const value = selection[slot];
+            if (value === undefined) return;
+
+            if (value && value !== 'NONE' && !GameConfig.WINGMAN_TYPES[value]) {
+                return;
+            }
+
+            this.selectedWingmanTypes[slot] = value && value !== 'NONE' ? value : null;
+        };
+
+        applySelection('LEFT');
+        applySelection('RIGHT');
+
+        this.activeWingmanSlot = 'LEFT';
     }
 }
 

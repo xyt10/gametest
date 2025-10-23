@@ -229,3 +229,17 @@ A: 可以!游戏支持触摸控制,在手机浏览器中打开即可。
 ---
 
 **祝你游戏愉快! 挑战最高分!** 🚀
+
+## 打包与发布
+
+如果需要将项目上传到GitHub发布页或分享给他人,可以使用 `scripts/package_project.sh` 快速生成归档包:
+
+```bash
+# 生成默认 dist/thunder-fighter.zip
+./scripts/package_project.sh
+
+# 或者指定输出文件
+./scripts/package_project.sh /path/to/output.zip
+```
+
+脚本会自动收集源代码、入口页面以及主要文档,并输出一个可直接上传的ZIP文件。
