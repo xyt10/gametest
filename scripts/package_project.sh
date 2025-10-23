@@ -1,5 +1,5 @@
 #!/bin/bash
-# 将项目打包为ZIP归档，便于上传到GitHub或发行渠道
+# 将项目打包为ZIP归档,便于上传到GitHub或发行渠道
 
 set -euo pipefail
 
@@ -23,34 +23,56 @@ copy_path() {
         local target_dir
         target_dir="${TMP_DIR}/$(dirname "$target_name")"
         mkdir -p "$target_dir"
-        if [ -d "$ROOT_DIR/$source_path" ]; then
-            cp -a "$ROOT_DIR/$source_path" "$TMP_DIR/$target_name"
-        else
-            cp -a "$ROOT_DIR/$source_path" "$TMP_DIR/$target_name"
-        fi
+        cp -a "$ROOT_DIR/$source_path" "$TMP_DIR/$target_name"
+    else
+        echo "警告: 找不到 $source_path, 已跳过" >&2
     fi
 }
 
-copy_path "src" "src"
-copy_path "index.html" "index.html"
-copy_path "start.sh" "start.sh"
-copy_path "README.md" "README.md"
-copy_path "QUICK_START.md" "docs/QUICK_START.md"
-copy_path "PROJECT_SUMMARY.md" "docs/PROJECT_SUMMARY.md"
-copy_path "SHIP_SELECTION_GUIDE.md" "docs/SHIP_SELECTION_GUIDE.md"
-copy_path "WINGMAN_SYSTEM.md" "docs/WINGMAN_SYSTEM.md"
-copy_path "WINGMAN_QUICKSTART.md" "docs/WINGMAN_QUICKSTART.md"
-copy_path "OPTIMIZATION_SUMMARY.md" "docs/OPTIMIZATION_SUMMARY.md"
-copy_path "NEW_FEATURES.md" "docs/NEW_FEATURES.md"
+ASSETS=(
+    "src::src"
+    "index.html::index.html"
+    "start.sh::start.sh"
+    "README.md::README.md"
+)
+
+DOCS=(
+    "QUICK_START.md::docs/QUICK_START.md"
+    "PROJECT_SUMMARY.md::docs/PROJECT_SUMMARY.md"
+    "SHIP_SELECTION_GUIDE.md::docs/SHIP_SELECTION_GUIDE.md"
+    "WINGMAN_SYSTEM.md::docs/WINGMAN_SYSTEM.md"
+    "WINGMAN_QUICKSTART.md::docs/WINGMAN_QUICKSTART.md"
+    "OPTIMIZATION_SUMMARY.md::docs/OPTIMIZATION_SUMMARY.md"
+    "NEW_FEATURES.md::docs/NEW_FEATURES.md"
+    "TESTING_GUIDE.md::docs/TESTING_GUIDE.md"
+    "README_PRO.md::docs/README_PRO.md"
+    "CHANGELOG_v2.md::docs/CHANGELOG_v2.md"
+    "UPLOAD_GUIDE.md::docs/UPLOAD_GUIDE.md"
+)
+
+for entry in "${ASSETS[@]}"; do
+    IFS='::' read -r source target <<<"$entry"
+    copy_path "$source" "$target"
+done
+
+for entry in "${DOCS[@]}"; do
+    IFS='::' read -r source target <<<"$entry"
+    copy_path "$source" "$target"
+done
 
 pushd "$TMP_DIR" > /dev/null
 
 if command -v zip >/dev/null 2>&1; then
     zip -r "$OUTPUT_PATH" . >/dev/null
+    echo "已生成ZIP归档: $OUTPUT_PATH"
 else
-    tar -czf "${OUTPUT_PATH%.zip}.tar.gz" .
+    fallback_tar="${OUTPUT_PATH%.zip}.tar.gz"
+    tar -czf "$fallback_tar" .
+    echo "当前环境缺少zip命令,已生成Tar归档: $fallback_tar"
 fi
 
 popd > /dev/null
 
-echo "项目已成功打包: $OUTPUT_PATH"
+if [ -f "$OUTPUT_PATH" ]; then
+    echo "项目已成功打包: $OUTPUT_PATH"
+fi
