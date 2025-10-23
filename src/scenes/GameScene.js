@@ -11,6 +11,8 @@ class GameScene {
         // 游戏状态
         this.gameState = 'menu'; // menu, shipSelection, playing, paused, gameover
         this.selectedShipType = null; // 保存选择的战机类型
+        this.selectedWingmanTypes = { LEFT: 'STANDARD', RIGHT: null };
+        this.preferredWingmanType = 'STANDARD';
         this.score = 0;
         this.stage = 1;
         this.stageTime = 0;
@@ -44,6 +46,12 @@ class GameScene {
 
         // 背景滚动
         this.bgOffset = 0;
+
+        // 预计算的背景资源与循环相关引用
+        this.backgroundGradient = null;
+        this.backgroundGridPath = null;
+        this.lastFrameWarningTime = 0;
+        this.boundGameLoop = null;
 
         // 星空背景
         this.stars = [];
@@ -114,13 +122,21 @@ class GameScene {
 
         // 初始化战机选择界面
         this.shipSelection = new ShipSelection(this.ctx, this.canvas);
+        this.shipSelection.setSelectedShip(this.selectedShipType || 'STANDARD');
+        this.shipSelection.setSelectedWingmen(this.selectedWingmanTypes);
         this.shipSelection.onConfirm = () => {
             this.selectedShipType = this.shipSelection.getSelectedShip();
+            this.selectedWingmanTypes = this.shipSelection.getSelectedWingmen();
+            this.preferredWingmanType = this.selectedWingmanTypes.LEFT || this.selectedWingmanTypes.RIGHT || 'STANDARD';
             this.startGame();
         };
 
         // 绑定输入事件
         this.bindInputEvents();
+
+        // 预计算背景资源并绑定主循环，避免每帧重复创建
+        this.precomputeBackgroundAssets();
+        this.boundGameLoop = this.gameLoop.bind(this);
 
         console.log('游戏初始化完成');
     }
@@ -183,6 +199,28 @@ class GameScene {
     }
 
     /**
+     * 预计算背景渐变和网格路径以减少每帧开销
+     */
+    precomputeBackgroundAssets() {
+        this.backgroundGradient = this.ctx.createLinearGradient(0, 0, 0, GameConfig.CANVAS_HEIGHT);
+        this.backgroundGradient.addColorStop(0, '#000022');
+        this.backgroundGradient.addColorStop(0.5, '#000033');
+        this.backgroundGradient.addColorStop(1, '#000044');
+
+        if (typeof Path2D !== 'undefined') {
+            const verticalGridPath = new Path2D();
+            for (let x = 0; x < GameConfig.CANVAS_WIDTH; x += 60) {
+                verticalGridPath.moveTo(x, 0);
+                verticalGridPath.lineTo(x, GameConfig.CANVAS_HEIGHT);
+            }
+
+            this.backgroundGridPath = verticalGridPath;
+        } else {
+            this.backgroundGridPath = null;
+        }
+    }
+
+    /**
      * 更新鼠标位置（考虑canvas缩放）
      */
     updateMousePos(e) {
@@ -203,6 +241,10 @@ class GameScene {
      */
     showShipSelection() {
         this.gameState = 'shipSelection';
+        if (this.shipSelection) {
+            this.shipSelection.setSelectedShip(this.selectedShipType || 'STANDARD');
+            this.shipSelection.setSelectedWingmen(this.selectedWingmanTypes);
+        }
         console.log('进入战机选择界面');
     }
 
@@ -219,6 +261,7 @@ class GameScene {
         const shipType = this.selectedShipType || 'STANDARD';
         this.player.reset(shipType);
         console.log(`游戏开始！使用战机: ${shipType}`);
+        this.preferredWingmanType = this.selectedWingmanTypes.LEFT || this.selectedWingmanTypes.RIGHT || 'STANDARD';
 
         // 清空所有游戏对象
         this.enemies = [];
@@ -228,10 +271,26 @@ class GameScene {
         this.wingmen = [];  // 清空僚机
         this.boss = null;
 
+        // 生成已选择的僚机
+        this.spawnSelectedWingmen();
+
         // 重置生成器
         this.enemySpawner.reset();
 
         console.log('游戏开始！');
+    }
+
+    /**
+     * 生成已选择的僚机
+     */
+    spawnSelectedWingmen() {
+        const selections = this.selectedWingmanTypes || {};
+        for (const slot of ['LEFT', 'RIGHT']) {
+            const type = selections[slot];
+            if (type) {
+                this.wingmen.push(new Wingman(this.player, slot, type));
+            }
+        }
     }
 
     /**
@@ -322,11 +381,15 @@ class GameScene {
         // 更新僚机
         for (let i = this.wingmen.length - 1; i >= 0; i--) {
             const wingman = this.wingmen[i];
-            const bullet = wingman.update(this.deltaTime, this.enemies, currentTime);
+            const bulletsFromWingman = wingman.update(this.deltaTime, this.enemies, currentTime);
 
             // 如果僚机射击，添加子弹
-            if (bullet) {
-                this.bullets.push(bullet);
+            if (Array.isArray(bulletsFromWingman)) {
+                if (bulletsFromWingman.length > 0) {
+                    this.bullets.push(...bulletsFromWingman);
+                }
+            } else if (bulletsFromWingman) {
+                this.bullets.push(bulletsFromWingman);
             }
 
             // 移除死亡的僚机
@@ -372,31 +435,32 @@ class GameScene {
         }
         if (this.keys[' ']) {
             const bullets = this.player.shoot();
-            if (bullets) {
-                // 处理子弹数组（散弹等）
-                if (Array.isArray(bullets)) {
-                    this.bullets.push(...bullets);
-                } else {
-                    this.bullets.push(bullets);
-                }
-                this.audioManager.play('playerShoot', 0.3);
-            }
+            this.spawnPlayerBullets(bullets);
         }
 
         // 鼠标/触摸控制
         if (this.isMouseDown) {
             this.player.moveTowards(this.mousePos.x, this.mousePos.y);
             const bullets = this.player.shoot();
-            if (bullets) {
-                // 处理子弹数组（散弹等）
-                if (Array.isArray(bullets)) {
-                    this.bullets.push(...bullets);
-                } else {
-                    this.bullets.push(bullets);
-                }
-                this.audioManager.play('playerShoot', 0.3);
-            }
+            this.spawnPlayerBullets(bullets);
         }
+    }
+
+    /**
+     * 统一处理玩家子弹生成逻辑
+     */
+    spawnPlayerBullets(bullets) {
+        if (!bullets) {
+            return;
+        }
+
+        if (Array.isArray(bullets)) {
+            this.bullets.push(...bullets);
+        } else {
+            this.bullets.push(bullets);
+        }
+
+        this.audioManager.play('playerShoot', 0.3);
     }
 
     /**
@@ -437,11 +501,10 @@ class GameScene {
      */
     render() {
         // 清空画布with渐变背景
-        const bgGradient = this.ctx.createLinearGradient(0, 0, 0, GameConfig.CANVAS_HEIGHT);
-        bgGradient.addColorStop(0, '#000022');
-        bgGradient.addColorStop(0.5, '#000033');
-        bgGradient.addColorStop(1, '#000044');
-        this.ctx.fillStyle = bgGradient;
+        if (!this.backgroundGradient) {
+            this.precomputeBackgroundAssets();
+        }
+        this.ctx.fillStyle = this.backgroundGradient;
         this.ctx.fillRect(0, 0, GameConfig.CANVAS_WIDTH, GameConfig.CANVAS_HEIGHT);
 
         // 绘制背景网格和星空
@@ -512,13 +575,8 @@ class GameScene {
         // 绘制网格线（更淡）
         this.ctx.strokeStyle = 'rgba(0, 50, 100, 0.3)';
         this.ctx.lineWidth = 1;
-
-        // 绘制垂直线
-        for (let x = 0; x < GameConfig.CANVAS_WIDTH; x += 60) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, GameConfig.CANVAS_HEIGHT);
-            this.ctx.stroke();
+        if (this.backgroundGridPath) {
+            this.ctx.stroke(this.backgroundGridPath);
         }
 
         // 绘制水平线(滚动效果)
@@ -538,11 +596,10 @@ class GameScene {
         const centerX = GameConfig.CANVAS_WIDTH / 2;
 
         // 清空画布with渐变背景
-        const bgGradient = ctx.createLinearGradient(0, 0, 0, GameConfig.CANVAS_HEIGHT);
-        bgGradient.addColorStop(0, '#000022');
-        bgGradient.addColorStop(0.5, '#000033');
-        bgGradient.addColorStop(1, '#000044');
-        ctx.fillStyle = bgGradient;
+        if (!this.backgroundGradient) {
+            this.precomputeBackgroundAssets();
+        }
+        ctx.fillStyle = this.backgroundGradient;
         ctx.fillRect(0, 0, GameConfig.CANVAS_WIDTH, GameConfig.CANVAS_HEIGHT);
 
         // 绘制背景网格和星空
@@ -685,12 +742,16 @@ class GameScene {
             this.performanceMonitor.update();
         }
 
-        // 如果帧时间过长，显示警告
-        if (frameTime > 16) { // 16ms = 60fps
+        // 如果帧时间过长，显示警告（限流避免刷屏）
+        if (frameTime > 16 && endTime - this.lastFrameWarningTime > 500) { // 16ms = 60fps
             console.warn(`帧时间过长: ${frameTime.toFixed(2)}ms`);
+            this.lastFrameWarningTime = endTime;
         }
 
-        requestAnimationFrame(() => this.gameLoop());
+        if (!this.boundGameLoop) {
+            this.boundGameLoop = this.gameLoop.bind(this);
+        }
+        requestAnimationFrame(this.boundGameLoop);
     }
 
     /**
