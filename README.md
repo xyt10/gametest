@@ -1,4 +1,4 @@
-# 雷霆战机 - Thunder Fighter
+# 仿雷霆战机 - Thunder Fighter
 
 一个使用纯JavaScript和HTML5 Canvas开发的经典飞行射击游戏(STG)。
 
