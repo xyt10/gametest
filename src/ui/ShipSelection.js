@@ -80,8 +80,24 @@ class ShipSelection {
         this.lastTouchPoint = null; // 用于可视化显示触摸点
         this.touchDebugTime = 0;
 
+        // 激活状态
+        this.isActive = false;
+
         // 绑定事件
         this.setupEvents();
+    }
+
+    /**
+     * 设置界面是否处于激活状态
+     */
+    setActive(isActive) {
+        this.isActive = !!isActive;
+        if (!this.isActive) {
+            this.hoveredShipType = null;
+            this.hoveredWingmanType = null;
+            this.hoveredWingmanSlot = null;
+            this.isHoveringButton = false;
+        }
     }
 
     /**
@@ -197,18 +213,27 @@ class ShipSelection {
 
         // 鼠标点击事件
         this.handleClick = (e) => {
+            if (!this.isActive) {
+                return;
+            }
             const { x, y } = getCoordinates(e);
             handleInteraction(x, y);
         };
 
         // 鼠标移动事件
         this.handleMouseMove = (e) => {
+            if (!this.isActive) {
+                return;
+            }
             const { x, y } = getCoordinates(e);
             handleHover(x, y);
         };
 
         // 触摸开始事件（用于触摸交互）
         this.handleTouchStart = (e) => {
+            if (!this.isActive) {
+                return;
+            }
             e.preventDefault(); // 防止触发鼠标事件
             const { x, y } = getCoordinates(e);
             handleHover(x, y);
@@ -216,6 +241,9 @@ class ShipSelection {
 
         // 触摸结束事件（用于确认选择）
         this.handleTouchEnd = (e) => {
+            if (!this.isActive) {
+                return;
+            }
             e.preventDefault(); // 防止触发鼠标事件
             // 使用changedTouches获取刚结束的触摸点
             if (e.changedTouches && e.changedTouches.length > 0) {
@@ -243,6 +271,9 @@ class ShipSelection {
 
         // 触摸移动事件
         this.handleTouchMove = (e) => {
+            if (!this.isActive) {
+                return;
+            }
             e.preventDefault(); // 防止页面滚动
             const { x, y } = getCoordinates(e);
             handleHover(x, y);

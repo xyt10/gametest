@@ -13,6 +13,8 @@ class GameScene {
         this.selectedShipType = null; // 保存选择的战机类型
         this.selectedWingmanTypes = { LEFT: 'STANDARD', RIGHT: null };
         this.preferredWingmanType = 'STANDARD';
+        this.selectedLevelId = null; // 当前选择的关卡ID
+        this.currentLevelConfig = null;
         this.score = 0;
         this.stage = 1;
         this.stageTime = 0;
@@ -34,6 +36,7 @@ class GameScene {
         this.audioManager = null;
         this.particleSystem = null;
         this.shipSelection = null; // 战机选择界面
+        this.levelSelection = null; // 关卡选择界面
 
         // 输入
         this.keys = {};
@@ -49,6 +52,7 @@ class GameScene {
 
         // 预计算的背景资源与循环相关引用
         this.backgroundGradient = null;
+        this.backgroundOverlay = null;
         this.backgroundGridPath = null;
         this.lastFrameWarningTime = 0;
         this.boundGameLoop = null;
@@ -57,8 +61,29 @@ class GameScene {
         this.stars = [];
         this.initStars();
 
+        // 视觉主题与特效
+        this.sceneAnimationTime = 0;
+        this.backgroundOrbs = [];
+        this.techLines = [];
+        this.visualThemeBase = null;
+        this.currentVisualTheme = null;
+        this.gridSpacing = 60;
+        this.diagonalSpacing = 180;
+        this.diagonalSpeed = 40;
+        this.starColorComponents = [];
+
         // 性能监控
         this.performanceMonitor = null;
+
+        // 默认关卡配置
+        this.selectedLevelId = this.getDefaultLevelId();
+        this.currentLevelConfig = this.getLevelConfig(this.selectedLevelId);
+
+        // 背景音乐控制
+        this.backgroundMusicStarted = false;
+
+        // 预先应用视觉主题
+        this.applyVisualTheme(this.currentLevelConfig, { permanent: true });
 
         // 初始化
         this.init();
@@ -74,7 +99,8 @@ class GameScene {
                 y: Math.random() * GameConfig.CANVAS_HEIGHT,
                 size: Math.random() * 2,
                 speed: 0.5 + Math.random() * 1.5,
-                brightness: Math.random()
+                brightness: Math.random(),
+                colorIndex: Math.floor(Math.random() * 4)
             });
         }
     }
@@ -91,6 +117,9 @@ class GameScene {
 
         // 初始化系统
         this.enemySpawner = new EnemySpawner(this);
+        if (this.currentLevelConfig) {
+            this.enemySpawner.setLevelConfig(this.currentLevelConfig);
+        }
         this.collisionManager = new CollisionManager(this);
         this.upgradeSystem = new UpgradeSystem(this.player);
         this.gameHUD = new GameHUD(this);
@@ -124,11 +153,42 @@ class GameScene {
         this.shipSelection = new ShipSelection(this.ctx, this.canvas);
         this.shipSelection.setSelectedShip(this.selectedShipType || 'STANDARD');
         this.shipSelection.setSelectedWingmen(this.selectedWingmanTypes);
+        this.shipSelection.setActive(false);
         this.shipSelection.onConfirm = () => {
             this.selectedShipType = this.shipSelection.getSelectedShip();
             this.selectedWingmanTypes = this.shipSelection.getSelectedWingmen();
             this.preferredWingmanType = this.selectedWingmanTypes.LEFT || this.selectedWingmanTypes.RIGHT || 'STANDARD';
+            this.showLevelSelection();
+        };
+
+        // 初始化关卡选择界面
+        this.levelSelection = new LevelSelection(this.ctx, this.canvas);
+        if (this.selectedLevelId) {
+            this.levelSelection.setSelectedLevel(this.selectedLevelId);
+        }
+        this.levelSelection.setActive(false);
+        this.levelSelection.onConfirm = (levelId) => {
+            this.setLevel(levelId);
             this.startGame();
+        };
+        this.levelSelection.onBack = () => {
+            this.showShipSelection();
+        };
+        this.levelSelection.onPreviewLevel = (levelId) => {
+            if (!levelId) {
+                this.applyVisualTheme(this.currentLevelConfig, { permanent: true });
+                if (this.backgroundMusicStarted && this.audioManager) {
+                    this.audioManager.setBackgroundMusicTheme(this.buildAudioTheme(this.currentLevelConfig));
+                }
+                return;
+            }
+            const previewConfig = this.getLevelConfig(levelId);
+            if (previewConfig) {
+                this.applyVisualTheme(previewConfig, { permanent: false });
+                if (this.backgroundMusicStarted && this.audioManager) {
+                    this.audioManager.setBackgroundMusicTheme(this.buildAudioTheme(previewConfig));
+                }
+            }
         };
 
         // 绑定输入事件
@@ -162,6 +222,9 @@ class GameScene {
         this.canvas.addEventListener('mousedown', (e) => {
             this.isMouseDown = true;
             this.updateMousePos(e);
+            if (!this.backgroundMusicStarted) {
+                this.ensureBackgroundMusic();
+            }
             if (this.gameState === 'menu') {
                 this.showShipSelection(); // 进入战机选择
             }
@@ -181,6 +244,9 @@ class GameScene {
             this.isMouseDown = true;
             const touch = e.touches[0];
             this.updateMousePos(touch);
+            if (!this.backgroundMusicStarted) {
+                this.ensureBackgroundMusic();
+            }
             if (this.gameState === 'menu') {
                 this.showShipSelection(); // 进入战机选择
             }
@@ -202,14 +268,29 @@ class GameScene {
      * 预计算背景渐变和网格路径以减少每帧开销
      */
     precomputeBackgroundAssets() {
-        this.backgroundGradient = this.ctx.createLinearGradient(0, 0, 0, GameConfig.CANVAS_HEIGHT);
-        this.backgroundGradient.addColorStop(0, '#000022');
-        this.backgroundGradient.addColorStop(0.5, '#000033');
-        this.backgroundGradient.addColorStop(1, '#000044');
+        const theme = this.currentVisualTheme || this.buildVisualTheme(this.currentLevelConfig);
+        const gradientColors = Array.isArray(theme.gradient) && theme.gradient.length > 0
+            ? theme.gradient
+            : ['#000022', '#000033', '#000044'];
+
+        const gradient = this.ctx.createLinearGradient(0, 0, 0, GameConfig.CANVAS_HEIGHT);
+        const stopCount = gradientColors.length;
+        gradientColors.forEach((color, index) => {
+            const stop = stopCount === 1 ? 1 : index / (stopCount - 1);
+            gradient.addColorStop(stop, color);
+        });
+        this.backgroundGradient = gradient;
+
+        const overlay = this.ctx.createLinearGradient(0, 0, GameConfig.CANVAS_WIDTH, GameConfig.CANVAS_HEIGHT);
+        overlay.addColorStop(0, ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.08));
+        overlay.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+        overlay.addColorStop(1, ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.1));
+        this.backgroundOverlay = overlay;
 
         if (typeof Path2D !== 'undefined') {
             const verticalGridPath = new Path2D();
-            for (let x = 0; x < GameConfig.CANVAS_WIDTH; x += 60) {
+            this.gridSpacing = theme.gridSpacing || 60;
+            for (let x = 0; x <= GameConfig.CANVAS_WIDTH; x += this.gridSpacing) {
                 verticalGridPath.moveTo(x, 0);
                 verticalGridPath.lineTo(x, GameConfig.CANVAS_HEIGHT);
             }
@@ -218,6 +299,196 @@ class GameScene {
         } else {
             this.backgroundGridPath = null;
         }
+
+        this.diagonalSpacing = theme.diagonalSpacing || 180;
+        this.diagonalSpeed = theme.diagonalSpeed || 40;
+    }
+
+    /**
+     * 构建视觉主题配置
+     */
+    buildVisualTheme(levelConfig) {
+        const defaults = {
+            gradient: ['#000022', '#000033', '#000044'],
+            gridColor: 'rgba(0, 150, 255, 0.25)',
+            horizontalGridColor: 'rgba(0, 120, 255, 0.2)',
+            diagonalColor: 'rgba(0, 200, 255, 0.2)',
+            accent: '#00d9ff',
+            cardGradient: ['rgba(0, 170, 255, 0.85)', 'rgba(0, 120, 255, 0.75)'],
+            particleColors: ['rgba(0, 255, 255, 0.45)', 'rgba(0, 180, 255, 0.45)'],
+            orbColor: '#00d8ff',
+            gridSpacing: 60,
+            diagonalSpacing: 180,
+            diagonalSpeed: 40,
+            gridScrollSpeed: 55,
+            orbCount: 6,
+            techLineCount: 6,
+            starColors: ['#ffffff'],
+            starSpeedMultiplier: 1
+        };
+
+        const visual = levelConfig && levelConfig.VISUAL ? levelConfig.VISUAL : {};
+
+        return {
+            gradient: visual.GRADIENT || visual.gradient || defaults.gradient,
+            gridColor: visual.GRID_COLOR || visual.gridColor || defaults.gridColor,
+            horizontalGridColor: visual.HORIZONTAL_GRID_COLOR || visual.horizontalGridColor || defaults.horizontalGridColor,
+            diagonalColor: visual.DIAGONAL_COLOR || visual.diagonalColor || defaults.diagonalColor,
+            accent: visual.ACCENT || visual.accent || defaults.accent,
+            cardGradient: visual.CARD || visual.cardGradient || defaults.cardGradient,
+            particleColors: visual.PARTICLE_COLORS || visual.particleColors || defaults.particleColors,
+            orbColor: visual.ORB_COLOR || visual.orbColor || defaults.orbColor,
+            gridSpacing: visual.GRID_SPACING || visual.gridSpacing || defaults.gridSpacing,
+            diagonalSpacing: visual.DIAGONAL_SPACING || visual.diagonalSpacing || defaults.diagonalSpacing,
+            diagonalSpeed: visual.DIAGONAL_SPEED || visual.diagonalSpeed || defaults.diagonalSpeed,
+            gridScrollSpeed: visual.GRID_SCROLL_SPEED || visual.gridScrollSpeed || defaults.gridScrollSpeed,
+            orbCount: visual.ORB_COUNT || visual.orbCount || defaults.orbCount,
+            techLineCount: visual.TECH_LINE_COUNT || visual.techLineCount || defaults.techLineCount,
+            starColors: visual.STAR_COLORS || visual.starColors || defaults.starColors,
+            starSpeedMultiplier: visual.STAR_SPEED_MULTIPLIER || visual.starSpeedMultiplier || defaults.starSpeedMultiplier
+        };
+    }
+
+    /**
+     * 应用视觉主题
+     */
+    applyVisualTheme(levelConfig, { permanent = false } = {}) {
+        const theme = this.buildVisualTheme(levelConfig);
+        this.currentVisualTheme = theme;
+        if (permanent) {
+            this.visualThemeBase = theme;
+        }
+        this.precomputeBackgroundAssets();
+        this.generateBackgroundEffects();
+        const starColors = Array.isArray(theme.starColors) && theme.starColors.length > 0
+            ? theme.starColors
+            : ['#ffffff'];
+        this.starColorComponents = starColors.map(color => ColorUtils.parseColor(color));
+    }
+
+    /**
+     * 生成背景特效元素
+     */
+    generateBackgroundEffects() {
+        const theme = this.currentVisualTheme || this.buildVisualTheme(this.currentLevelConfig);
+        const orbCount = Math.max(0, Math.floor(theme.orbCount || 6));
+        this.backgroundOrbs = [];
+        for (let i = 0; i < orbCount; i++) {
+            this.backgroundOrbs.push({
+                x: Math.random() * GameConfig.CANVAS_WIDTH,
+                y: Math.random() * GameConfig.CANVAS_HEIGHT,
+                radius: 90 + Math.random() * 110,
+                speed: 12 + Math.random() * 24,
+                waveSpeed: 0.4 + Math.random() * 0.8,
+                waveAmplitude: 20 + Math.random() * 35,
+                phase: Math.random() * Math.PI * 2,
+                pulseSpeed: 0.8 + Math.random() * 1.4
+            });
+        }
+
+        const techLineCount = Math.max(0, Math.floor(theme.techLineCount || 6));
+        this.techLines = [];
+        for (let i = 0; i < techLineCount; i++) {
+            this.techLines.push({
+                x: Math.random() * GameConfig.CANVAS_WIDTH,
+                offset: Math.random() * (GameConfig.CANVAS_HEIGHT + 200) - 200,
+                length: 140 + Math.random() * 160,
+                width: 1 + Math.random() * 1.6,
+                speed: 60 + Math.random() * 70,
+                angle: (Math.random() * 0.6) - 0.3
+            });
+        }
+    }
+
+    /**
+     * 更新背景动画元素
+     */
+    updateBackgroundAnimation(deltaTime) {
+        const theme = this.currentVisualTheme || this.buildVisualTheme(this.currentLevelConfig);
+        const seconds = deltaTime / 1000;
+
+        this.sceneAnimationTime += seconds;
+
+        const scrollSpeed = theme.gridScrollSpeed || 55;
+        this.bgOffset += scrollSpeed * seconds;
+        const spacing = this.gridSpacing || theme.gridSpacing || 60;
+        if (this.bgOffset > spacing) {
+            this.bgOffset -= spacing;
+        }
+
+        const starSpeedMultiplier = theme.starSpeedMultiplier || 1;
+        this.stars.forEach(star => {
+            star.y += star.speed * seconds * 60 * starSpeedMultiplier;
+            if (star.y > GameConfig.CANVAS_HEIGHT) {
+                star.y = star.y - GameConfig.CANVAS_HEIGHT;
+                star.x = Math.random() * GameConfig.CANVAS_WIDTH;
+                star.colorIndex = Math.floor(Math.random() * 4);
+            }
+        });
+
+        this.backgroundOrbs.forEach(orb => {
+            orb.y += orb.speed * seconds;
+            orb.x += Math.sin(this.sceneAnimationTime * orb.waveSpeed + orb.phase) * orb.waveAmplitude * seconds * 10;
+            if (orb.y - orb.radius > GameConfig.CANVAS_HEIGHT) {
+                orb.y = -orb.radius;
+                orb.x = Math.random() * GameConfig.CANVAS_WIDTH;
+            }
+        });
+
+        this.techLines.forEach(line => {
+            line.offset += line.speed * seconds;
+            if (line.offset - line.length > GameConfig.CANVAS_HEIGHT + 100) {
+                line.offset = -200;
+                line.x = Math.random() * GameConfig.CANVAS_WIDTH;
+                line.length = 140 + Math.random() * 160;
+                line.speed = 60 + Math.random() * 70;
+            }
+        });
+    }
+
+    /**
+     * 构建背景音乐主题
+     */
+    buildAudioTheme(levelConfig) {
+        const defaults = {
+            baseFrequency: 180,
+            padFrequency: 360,
+            shimmerFrequency: 720,
+            lfoFrequency: 0.08,
+            lfoDepth: 24,
+            masterGain: 0.32,
+            baseGain: 0.45,
+            padGain: 0.22,
+            shimmerGain: 0.05,
+            filterFrequency: 1400
+        };
+
+        const audio = levelConfig && levelConfig.AUDIO ? levelConfig.AUDIO : {};
+
+        return {
+            baseFrequency: audio.BASE_FREQUENCY ?? audio.baseFrequency ?? defaults.baseFrequency,
+            padFrequency: audio.PAD_FREQUENCY ?? audio.padFrequency ?? defaults.padFrequency,
+            shimmerFrequency: audio.SHIMMER_FREQUENCY ?? audio.shimmerFrequency ?? defaults.shimmerFrequency,
+            lfoFrequency: audio.LFO_FREQUENCY ?? audio.lfoFrequency ?? defaults.lfoFrequency,
+            lfoDepth: audio.LFO_DEPTH ?? audio.lfoDepth ?? defaults.lfoDepth,
+            masterGain: audio.MASTER_GAIN ?? audio.masterGain ?? defaults.masterGain,
+            baseGain: audio.BASE_GAIN ?? audio.baseGain ?? defaults.baseGain,
+            padGain: audio.PAD_GAIN ?? audio.padGain ?? defaults.padGain,
+            shimmerGain: audio.SHIMMER_GAIN ?? audio.shimmerGain ?? defaults.shimmerGain,
+            filterFrequency: audio.FILTER_FREQUENCY ?? audio.filterFrequency ?? defaults.filterFrequency
+        };
+    }
+
+    /**
+     * 确保背景音乐已启动
+     */
+    ensureBackgroundMusic(themeOverride) {
+        if (!this.audioManager) {
+            return;
+        }
+        const theme = themeOverride || this.buildAudioTheme(this.currentLevelConfig);
+        this.audioManager.startBackgroundMusic(theme);
+        this.backgroundMusicStarted = true;
     }
 
     /**
@@ -244,14 +515,45 @@ class GameScene {
         if (this.shipSelection) {
             this.shipSelection.setSelectedShip(this.selectedShipType || 'STANDARD');
             this.shipSelection.setSelectedWingmen(this.selectedWingmanTypes);
+            this.shipSelection.setActive(true);
+        }
+        if (this.levelSelection) {
+            this.levelSelection.setActive(false);
         }
         console.log('进入战机选择界面');
+    }
+
+    /**
+     * 显示关卡选择界面
+     */
+    showLevelSelection() {
+        this.gameState = 'levelSelection';
+        const fallbackLevelId = this.selectedLevelId || this.getDefaultLevelId();
+        if (this.levelSelection) {
+            this.levelSelection.setSelectedLevel(fallbackLevelId);
+            this.levelSelection.setActive(true);
+        }
+        if (this.shipSelection) {
+            this.shipSelection.setActive(false);
+        }
+        this.applyVisualTheme(this.currentLevelConfig, { permanent: true });
+        if (this.backgroundMusicStarted && this.audioManager) {
+            this.audioManager.setBackgroundMusicTheme(this.buildAudioTheme(this.currentLevelConfig));
+        }
+        console.log('进入关卡选择界面');
     }
 
     /**
      * 开始游戏
      */
     startGame() {
+        this.setLevel(this.selectedLevelId || this.getDefaultLevelId());
+        if (this.shipSelection) {
+            this.shipSelection.setActive(false);
+        }
+        if (this.levelSelection) {
+            this.levelSelection.setActive(false);
+        }
         this.gameState = 'playing';
         this.score = 0;
         this.stage = 1;
@@ -261,6 +563,9 @@ class GameScene {
         const shipType = this.selectedShipType || 'STANDARD';
         this.player.reset(shipType);
         console.log(`游戏开始！使用战机: ${shipType}`);
+        if (this.currentLevelConfig) {
+            console.log(`选择关卡: ${this.currentLevelConfig.NAME} (${this.currentLevelConfig.DIFFICULTY})`);
+        }
         this.preferredWingmanType = this.selectedWingmanTypes.LEFT || this.selectedWingmanTypes.RIGHT || 'STANDARD';
 
         // 清空所有游戏对象
@@ -294,6 +599,56 @@ class GameScene {
     }
 
     /**
+     * 设置关卡并应用配置
+     */
+    setLevel(levelId) {
+        const config = this.getLevelConfig(levelId);
+        if (!config) {
+            return;
+        }
+
+        this.selectedLevelId = config.ID;
+        this.currentLevelConfig = config;
+
+        this.applyVisualTheme(this.currentLevelConfig, { permanent: true });
+        if (this.backgroundMusicStarted && this.audioManager) {
+            this.audioManager.setBackgroundMusicTheme(this.buildAudioTheme(this.currentLevelConfig));
+        }
+
+        if (this.levelSelection) {
+            this.levelSelection.setSelectedLevel(this.selectedLevelId);
+        }
+
+        if (this.enemySpawner) {
+            this.enemySpawner.setLevelConfig(this.currentLevelConfig);
+        }
+    }
+
+    /**
+     * 获取关卡配置
+     */
+    getLevelConfig(levelId) {
+        if (!GameConfig.LEVELS || GameConfig.LEVELS.length === 0) {
+            return null;
+        }
+
+        const found = GameConfig.LEVELS.find(level => level.ID === levelId);
+        return found || GameConfig.LEVELS[0];
+    }
+
+    /**
+     * 获取默认关卡ID
+     */
+    getDefaultLevelId() {
+        if (!GameConfig.LEVELS || GameConfig.LEVELS.length === 0) {
+            return null;
+        }
+
+        const normalLevel = GameConfig.LEVELS.find(level => level.ID === 'NORMAL');
+        return normalLevel ? normalLevel.ID : GameConfig.LEVELS[0].ID;
+    }
+
+    /**
      * 暂停游戏
      */
     pause() {
@@ -322,20 +677,21 @@ class GameScene {
         this.deltaTime = currentTime - this.lastTime;
         this.lastTime = currentTime;
 
+        this.updateBackgroundAnimation(this.deltaTime);
+
         // 更新战机选择界面
         if (this.gameState === 'shipSelection') {
             this.shipSelection.update(this.deltaTime);
             return;
         }
 
-        if (this.gameState !== 'playing') {
+        if (this.gameState === 'levelSelection') {
+            this.levelSelection.update(this.deltaTime);
             return;
         }
 
-        // 更新背景
-        this.bgOffset += 1;
-        if (this.bgOffset > GameConfig.CANVAS_HEIGHT) {
-            this.bgOffset = 0;
+        if (this.gameState !== 'playing') {
+            return;
         }
 
         // 更新关卡时间
@@ -520,6 +876,11 @@ class GameScene {
             return;
         }
 
+        if (this.gameState === 'levelSelection') {
+            this.levelSelection.render();
+            return;
+        }
+
         if (this.gameState === 'gameover') {
             this.renderGameOver();
             return;
@@ -557,35 +918,127 @@ class GameScene {
      * 渲染背景
      */
     renderBackground() {
-        // 更新并绘制星星
-        this.stars.forEach(star => {
-            star.y += star.speed;
-            if (star.y > GameConfig.CANVAS_HEIGHT) {
-                star.y = 0;
-                star.x = Math.random() * GameConfig.CANVAS_WIDTH;
-            }
+        const ctx = this.ctx;
+        const theme = this.currentVisualTheme || this.visualThemeBase || this.buildVisualTheme(this.currentLevelConfig);
+        const width = GameConfig.CANVAS_WIDTH;
+        const height = GameConfig.CANVAS_HEIGHT;
 
-            const alpha = 0.3 + star.brightness * 0.7;
-            this.ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-            this.ctx.beginPath();
-            this.ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-            this.ctx.fill();
+        // 轻量渐变叠加，增加科技质感（缓存避免重复创建）
+        if (!this.backgroundOverlay) {
+            const overlay = this.ctx.createLinearGradient(0, 0, width, height);
+            overlay.addColorStop(0, ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.08));
+            overlay.addColorStop(0.5, 'rgba(255, 255, 255, 0.02)');
+            overlay.addColorStop(1, ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.1));
+            this.backgroundOverlay = overlay;
+        }
+        if (this.backgroundOverlay) {
+            ctx.save();
+            ctx.fillStyle = this.backgroundOverlay;
+            ctx.fillRect(0, 0, width, height);
+            ctx.restore();
+        }
+
+        // 能量光球
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        this.backgroundOrbs.forEach(orb => {
+            const pulse = 0.65 + Math.sin(this.sceneAnimationTime * orb.pulseSpeed + orb.phase) * 0.2;
+            const radius = orb.radius * pulse;
+            const gradient = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, radius);
+            gradient.addColorStop(0, ColorUtils.resolveColorWithAlpha(theme.orbColor || theme.accent || '#00d8ff', 0.35));
+            gradient.addColorStop(0.6, ColorUtils.resolveColorWithAlpha(theme.orbColor || theme.accent || '#00d8ff', 0.18));
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(orb.x, orb.y, radius, 0, Math.PI * 2);
+            ctx.fill();
         });
+        ctx.restore();
 
-        // 绘制网格线（更淡）
-        this.ctx.strokeStyle = 'rgba(0, 50, 100, 0.3)';
-        this.ctx.lineWidth = 1;
+        // 高速扫描线
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.strokeStyle = ColorUtils.resolveColorWithAlpha(theme.diagonalColor || theme.accent || '#00d9ff', 0.22);
+        ctx.lineWidth = 1.2;
+        const diagSpacing = this.diagonalSpacing || theme.diagonalSpacing || 180;
+        const diagShift = (this.sceneAnimationTime * (this.diagonalSpeed || theme.diagonalSpeed || 40)) % diagSpacing;
+        for (let i = -1; i < width / diagSpacing + 2; i++) {
+            const x = i * diagSpacing + diagShift;
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x - height * 0.6, height);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // 科技线条
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineCap = 'round';
+        this.techLines.forEach(line => {
+            const startX = line.x;
+            const startY = line.offset;
+            const endX = line.x + Math.cos(line.angle) * line.length;
+            const endY = line.offset + Math.sin(line.angle) * line.length;
+            ctx.strokeStyle = ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.28);
+            ctx.lineWidth = line.width;
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(endX, endY);
+            ctx.stroke();
+
+            ctx.fillStyle = ColorUtils.resolveColorWithAlpha(theme.accent || '#00d9ff', 0.35);
+            ctx.beginPath();
+            ctx.arc(endX, endY, 2.5 + line.width, 0, Math.PI * 2);
+            ctx.fill();
+        });
+        ctx.restore();
+
+        // 垂直网格线
+        ctx.save();
+        ctx.strokeStyle = theme.gridColor || 'rgba(0, 120, 255, 0.25)';
+        ctx.lineWidth = 1;
         if (this.backgroundGridPath) {
-            this.ctx.stroke(this.backgroundGridPath);
+            ctx.stroke(this.backgroundGridPath);
         }
+        ctx.restore();
 
-        // 绘制水平线(滚动效果)
-        for (let y = -60 + (this.bgOffset % 60); y < GameConfig.CANVAS_HEIGHT; y += 60) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
-            this.ctx.lineTo(GameConfig.CANVAS_WIDTH, y);
-            this.ctx.stroke();
+        // 水平扫描网格
+        ctx.save();
+        const spacing = this.gridSpacing || theme.gridSpacing || 60;
+        const offset = (this.bgOffset % spacing);
+        ctx.strokeStyle = theme.horizontalGridColor || theme.gridColor || 'rgba(0, 120, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.85;
+        for (let y = -spacing + offset; y < height + spacing; y += spacing) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(width, y);
+            ctx.stroke();
         }
+        ctx.restore();
+
+        // 星空粒子
+        ctx.save();
+        const starColors = this.starColorComponents.length > 0
+            ? this.starColorComponents
+            : [ColorUtils.parseColor('#ffffff')];
+        this.stars.forEach(star => {
+            const components = starColors[star.colorIndex % starColors.length];
+            const alpha = 0.25 + star.brightness * 0.6;
+            ctx.fillStyle = ColorUtils.toRgbaString(components, alpha);
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.size + alpha * 0.8, 0, Math.PI * 2);
+            ctx.fill();
+
+            const glowRadius = star.size * 3 + star.brightness * 4;
+            const glow = ctx.createRadialGradient(star.x, star.y, 0, star.x, star.y, glowRadius);
+            glow.addColorStop(0, ColorUtils.toRgbaString(components, alpha * 0.5));
+            glow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(star.x - glowRadius, star.y - glowRadius, glowRadius * 2, glowRadius * 2);
+        });
+        ctx.restore();
     }
 
     /**
@@ -594,18 +1047,9 @@ class GameScene {
     renderMenu() {
         const ctx = this.ctx;
         const centerX = GameConfig.CANVAS_WIDTH / 2;
+        const theme = this.currentVisualTheme || this.visualThemeBase || this.buildVisualTheme(this.currentLevelConfig);
+        const accent = theme.accent || '#00f6ff';
 
-        // 清空画布with渐变背景
-        if (!this.backgroundGradient) {
-            this.precomputeBackgroundAssets();
-        }
-        ctx.fillStyle = this.backgroundGradient;
-        ctx.fillRect(0, 0, GameConfig.CANVAS_WIDTH, GameConfig.CANVAS_HEIGHT);
-
-        // 绘制背景网格和星空
-        this.renderBackground();
-
-        // 标题动画效果
         const time = Date.now() * 0.001;
         const titleScale = 1 + Math.sin(time * 2) * 0.05;
         const titleY = 200 + Math.sin(time) * 5;
@@ -615,78 +1059,72 @@ class GameScene {
         ctx.scale(titleScale, titleScale);
         ctx.translate(-centerX, -titleY);
 
-        // 主标题
-        ctx.fillStyle = '#fff';
+        const titleGradient = ctx.createLinearGradient(centerX - 140, titleY - 40, centerX + 140, titleY + 40);
+        titleGradient.addColorStop(0, ColorUtils.resolveColorWithAlpha(accent, 0.95));
+        titleGradient.addColorStop(0.5, '#ffffff');
+        titleGradient.addColorStop(1, ColorUtils.resolveColorWithAlpha(accent, 0.95));
+        ctx.fillStyle = titleGradient;
         ctx.font = 'bold 48px Arial';
         ctx.textAlign = 'center';
-        ctx.shadowColor = 'rgba(0, 150, 255, 0.8)';
-        ctx.shadowBlur = 20;
+        ctx.shadowColor = ColorUtils.resolveColorWithAlpha(accent, 0.85);
+        ctx.shadowBlur = 24;
         ctx.fillText('雷霆战机', centerX, 200);
 
-        // 副标题
         ctx.font = '16px Arial';
-        ctx.shadowBlur = 10;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx.fillText('Thunder Fighter', centerX, 220);
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = ColorUtils.resolveColorWithAlpha(accent, 0.65);
+        ctx.fillText('Thunder Fighter', centerX, 224);
 
         ctx.restore();
 
-        // 开始按钮
-        const buttonY = 350;
-        const buttonWidth = 200;
-        const buttonHeight = 50;
+        const buttonY = 360;
+        const buttonWidth = 220;
+        const buttonHeight = 56;
         const buttonX = centerX - buttonWidth / 2;
-
-        // 按钮动画
         const buttonHover = this.mousePos.x >= buttonX &&
-                           this.mousePos.x <= buttonX + buttonWidth &&
-                           this.mousePos.y >= buttonY &&
-                           this.mousePos.y <= buttonY + buttonHeight;
+                            this.mousePos.x <= buttonX + buttonWidth &&
+                            this.mousePos.y >= buttonY &&
+                            this.mousePos.y <= buttonY + buttonHeight;
 
-        const buttonScale = buttonHover ? 1.1 : 1;
-        const buttonAlpha = buttonHover ? 0.9 : 0.7;
+        const buttonScale = buttonHover ? 1.08 : 1;
+        const buttonAlpha = buttonHover ? 0.95 : 0.78;
 
         ctx.save();
         ctx.translate(centerX, buttonY + buttonHeight / 2);
         ctx.scale(buttonScale, buttonScale);
         ctx.translate(-centerX, -(buttonY + buttonHeight / 2));
 
-        // 按钮背景
-        ctx.fillStyle = `rgba(0, 150, 255, ${buttonAlpha})`;
-        ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        const radius = 12;
+        ctx.beginPath();
+        ctx.moveTo(buttonX + radius, buttonY);
+        ctx.lineTo(buttonX + buttonWidth - radius, buttonY);
+        ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY, buttonX + buttonWidth, buttonY + radius);
+        ctx.lineTo(buttonX + buttonWidth, buttonY + buttonHeight - radius);
+        ctx.quadraticCurveTo(buttonX + buttonWidth, buttonY + buttonHeight, buttonX + buttonWidth - radius, buttonY + buttonHeight);
+        ctx.lineTo(buttonX + radius, buttonY + buttonHeight);
+        ctx.quadraticCurveTo(buttonX, buttonY + buttonHeight, buttonX, buttonY + buttonHeight - radius);
+        ctx.lineTo(buttonX, buttonY + radius);
+        ctx.quadraticCurveTo(buttonX, buttonY, buttonX + radius, buttonY);
+        ctx.closePath();
 
-        // 按钮边框
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillStyle = ColorUtils.resolveColorWithAlpha(accent, buttonAlpha);
+        ctx.fill();
+
+        ctx.strokeStyle = ColorUtils.resolveColorWithAlpha('#ffffff', 0.85);
         ctx.lineWidth = 2;
-        ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+        ctx.stroke();
 
-        // 按钮文字
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 20px Arial';
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 22px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('点击开始', centerX, buttonY + 30);
+        ctx.fillText('开始游戏', centerX, buttonY + buttonHeight / 2 + 7);
 
         ctx.restore();
 
-        // 控制说明
         ctx.font = '16px Arial';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillStyle = ColorUtils.resolveColorWithAlpha('#ffffff', 0.75);
         ctx.textAlign = 'center';
-
-        const instructions = [
-            '方向键/WASD/鼠标 - 移动战机',
-            '空格/点击 - 射击',
-            'ESC - 暂停'
-        ];
-
-        instructions.forEach((text, index) => {
-            ctx.fillText(text, centerX, 500 + index * 30);
-        });
-
-        // 版本信息
-        ctx.font = '12px Arial';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.fillText('Pro Edition v2.0', centerX, GameConfig.CANVAS_HEIGHT - 20);
+        ctx.fillText('点击屏幕或按任意键开始', centerX, buttonY + 90);
     }
 
     /**

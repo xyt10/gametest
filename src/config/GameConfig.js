@@ -89,6 +89,145 @@ const GameConfig = {
         }
     },
 
+    // 关卡难度配置
+    LEVELS: [
+        {
+            ID: 'EASY',
+            NAME: '训练模式',
+            DESCRIPTION: '敌人生成较慢，属性降低，适合熟悉操作。',
+            DIFFICULTY: '简单',
+            MODIFIERS: {
+                SPAWN_INTERVAL_MULTIPLIER: 1.3,
+                SPAWN_MIN_INTERVAL_MULTIPLIER: 1.2,
+                SPAWN_DIFFICULTY_MULTIPLIER: 1.02,
+                ENEMY_HEALTH_MULTIPLIER: 0.8,
+                ENEMY_SPEED_MULTIPLIER: 0.9,
+                ENEMY_DAMAGE_MULTIPLIER: 0.8,
+                SCORE_MULTIPLIER: 0.9,
+                BOSS_HEALTH_MULTIPLIER: 0.85,
+                BOSS_DAMAGE_MULTIPLIER: 0.9
+            },
+            VISUAL: {
+                GRADIENT: ['#051226', '#082f52', '#041a36'],
+                GRID_COLOR: 'rgba(0, 214, 255, 0.25)',
+                HORIZONTAL_GRID_COLOR: 'rgba(0, 214, 255, 0.18)',
+                DIAGONAL_COLOR: 'rgba(0, 214, 255, 0.18)',
+                ACCENT: '#00f6ff',
+                CARD: ['rgba(0, 198, 255, 0.85)', 'rgba(0, 125, 255, 0.75)'],
+                STAR_COLORS: ['#74faff', '#c7f6ff', '#ffffff'],
+                PARTICLE_COLORS: ['rgba(0, 255, 255, 0.4)', 'rgba(0, 180, 255, 0.45)'],
+                ORB_COLOR: '#00d8ff',
+                GRID_SPACING: 60,
+                DIAGONAL_SPACING: 180,
+                DIAGONAL_SPEED: 30,
+                ORB_COUNT: 5,
+                TECH_LINE_COUNT: 6
+            },
+            AUDIO: {
+                BASE_FREQUENCY: 160,
+                PAD_FREQUENCY: 320,
+                SHIMMER_FREQUENCY: 640,
+                LFO_FREQUENCY: 0.06,
+                LFO_DEPTH: 22,
+                MASTER_GAIN: 0.28,
+                BASE_GAIN: 0.45,
+                PAD_GAIN: 0.2,
+                SHIMMER_GAIN: 0.04,
+                FILTER_FREQUENCY: 1200
+            }
+        },
+        {
+            ID: 'NORMAL',
+            NAME: '标准战役',
+            DESCRIPTION: '官方推荐难度，享受原汁原味的战斗节奏。',
+            DIFFICULTY: '普通',
+            MODIFIERS: {
+                SPAWN_INTERVAL_MULTIPLIER: 1,
+                SPAWN_MIN_INTERVAL_MULTIPLIER: 1,
+                SPAWN_DIFFICULTY_MULTIPLIER: 1,
+                ENEMY_HEALTH_MULTIPLIER: 1,
+                ENEMY_SPEED_MULTIPLIER: 1,
+                ENEMY_DAMAGE_MULTIPLIER: 1,
+                SCORE_MULTIPLIER: 1,
+                BOSS_HEALTH_MULTIPLIER: 1,
+                BOSS_DAMAGE_MULTIPLIER: 1
+            },
+            VISUAL: {
+                GRADIENT: ['#16051f', '#1f0d42', '#08164a'],
+                GRID_COLOR: 'rgba(141, 82, 255, 0.28)',
+                HORIZONTAL_GRID_COLOR: 'rgba(103, 132, 255, 0.2)',
+                DIAGONAL_COLOR: 'rgba(162, 119, 255, 0.22)',
+                ACCENT: '#a46bff',
+                CARD: ['rgba(148, 92, 255, 0.85)', 'rgba(64, 118, 255, 0.75)'],
+                STAR_COLORS: ['#d5b8ff', '#9bbdff', '#ffffff'],
+                PARTICLE_COLORS: ['rgba(170, 90, 255, 0.45)', 'rgba(80, 140, 255, 0.45)'],
+                ORB_COLOR: '#a874ff',
+                GRID_SPACING: 55,
+                DIAGONAL_SPACING: 160,
+                DIAGONAL_SPEED: 45,
+                ORB_COUNT: 6,
+                TECH_LINE_COUNT: 7
+            },
+            AUDIO: {
+                BASE_FREQUENCY: 190,
+                PAD_FREQUENCY: 360,
+                SHIMMER_FREQUENCY: 760,
+                LFO_FREQUENCY: 0.08,
+                LFO_DEPTH: 26,
+                MASTER_GAIN: 0.32,
+                BASE_GAIN: 0.5,
+                PAD_GAIN: 0.24,
+                SHIMMER_GAIN: 0.06,
+                FILTER_FREQUENCY: 1500
+            }
+        },
+        {
+            ID: 'HARD',
+            NAME: '噩梦挑战',
+            DESCRIPTION: '敌人狂潮来袭，属性全面强化，考验极限操作。',
+            DIFFICULTY: '困难',
+            MODIFIERS: {
+                SPAWN_INTERVAL_MULTIPLIER: 0.8,
+                SPAWN_MIN_INTERVAL_MULTIPLIER: 0.7,
+                SPAWN_DIFFICULTY_MULTIPLIER: 0.9,
+                ENEMY_HEALTH_MULTIPLIER: 1.2,
+                ENEMY_SPEED_MULTIPLIER: 1.1,
+                ENEMY_DAMAGE_MULTIPLIER: 1.2,
+                SCORE_MULTIPLIER: 1.3,
+                BOSS_HEALTH_MULTIPLIER: 1.3,
+                BOSS_DAMAGE_MULTIPLIER: 1.2
+            },
+            VISUAL: {
+                GRADIENT: ['#220506', '#4a0c0f', '#130808'],
+                GRID_COLOR: 'rgba(255, 84, 84, 0.32)',
+                HORIZONTAL_GRID_COLOR: 'rgba(255, 146, 68, 0.24)',
+                DIAGONAL_COLOR: 'rgba(255, 110, 60, 0.28)',
+                ACCENT: '#ff7058',
+                CARD: ['rgba(255, 110, 70, 0.88)', 'rgba(200, 60, 80, 0.78)'],
+                STAR_COLORS: ['#ffd2aa', '#ff8f8f', '#ffffff'],
+                PARTICLE_COLORS: ['rgba(255, 120, 80, 0.5)', 'rgba(255, 60, 90, 0.45)'],
+                ORB_COLOR: '#ff6648',
+                GRID_SPACING: 50,
+                DIAGONAL_SPACING: 140,
+                DIAGONAL_SPEED: 65,
+                ORB_COUNT: 7,
+                TECH_LINE_COUNT: 9
+            },
+            AUDIO: {
+                BASE_FREQUENCY: 210,
+                PAD_FREQUENCY: 420,
+                SHIMMER_FREQUENCY: 880,
+                LFO_FREQUENCY: 0.1,
+                LFO_DEPTH: 34,
+                MASTER_GAIN: 0.36,
+                BASE_GAIN: 0.55,
+                PAD_GAIN: 0.28,
+                SHIMMER_GAIN: 0.07,
+                FILTER_FREQUENCY: 1800
+            }
+        }
+    ],
+
     // 子弹配置
     BULLET: {
         SPEED: 8,                    // 子弹速度

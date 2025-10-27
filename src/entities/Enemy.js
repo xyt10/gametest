@@ -4,21 +4,26 @@
  */
 
 class Enemy {
-    constructor(x, y, type) {
+    constructor(x, y, type, modifiers = {}) {
         this.x = x;
         this.y = y;
         this.type = type || 'SMALL';
 
         // 从配置获取属性
         const config = GameConfig.ENEMY_TYPES[this.type];
-        this.maxHealth = config.HEALTH;
+        const healthMultiplier = modifiers.healthMultiplier || 1;
+        const speedMultiplier = modifiers.speedMultiplier || 1;
+        const damageMultiplier = modifiers.damageMultiplier || 1;
+        const scoreMultiplier = modifiers.scoreMultiplier || 1;
+
+        this.maxHealth = Math.round(config.HEALTH * healthMultiplier);
         this.health = this.maxHealth;
-        this.speed = config.SPEED;
-        this.scoreValue = config.SCORE;
+        this.speed = config.SPEED * speedMultiplier;
+        this.scoreValue = Math.round(config.SCORE * scoreMultiplier);
         this.width = config.WIDTH;
         this.height = config.HEIGHT;
         this.fireRate = config.FIRE_RATE;
-        this.damage = config.DAMAGE;
+        this.damage = config.DAMAGE * damageMultiplier;
 
         this.alive = true;
         this.lastFireTime = 0;
