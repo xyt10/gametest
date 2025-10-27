@@ -13,6 +13,9 @@ class AudioManager {
         // 音效缓存
         this.sounds = {};
 
+        // 背景音乐节点引用
+        this.backgroundMusic = null;
+
         this.init();
     }
 
@@ -348,6 +351,213 @@ class AudioManager {
 
         // 高频爆炸声
         this.playExplosion(volume * 1.5);
+    }
+
+    /**
+     * 启动常驻背景音乐
+     */
+    startBackgroundMusic(theme = {}) {
+        if (!this.enabled || !this.audioContext) {
+            return;
+        }
+
+        this.resume();
+
+        const resolvedTheme = this.normalizeMusicTheme(theme);
+
+        if (this.backgroundMusic) {
+            this.setBackgroundMusicTheme(resolvedTheme);
+            return;
+        }
+
+        const ctx = this.audioContext;
+        const masterGain = ctx.createGain();
+        masterGain.gain.setValueAtTime(this.masterVolume * resolvedTheme.masterGain, ctx.currentTime);
+        masterGain.connect(ctx.destination);
+
+        const baseOsc = ctx.createOscillator();
+        baseOsc.type = 'sine';
+        baseOsc.frequency.value = resolvedTheme.baseFrequency;
+        const baseGain = ctx.createGain();
+        baseGain.gain.value = resolvedTheme.baseGain;
+        baseOsc.connect(baseGain);
+        baseGain.connect(masterGain);
+
+        const padOsc = ctx.createOscillator();
+        padOsc.type = 'triangle';
+        padOsc.frequency.value = resolvedTheme.padFrequency;
+        const padGain = ctx.createGain();
+        padGain.gain.value = resolvedTheme.padGain;
+        padOsc.connect(padGain);
+        padGain.connect(masterGain);
+
+        const shimmerOsc = ctx.createOscillator();
+        shimmerOsc.type = 'sawtooth';
+        shimmerOsc.frequency.value = resolvedTheme.shimmerFrequency;
+        const shimmerGain = ctx.createGain();
+        shimmerGain.gain.value = resolvedTheme.shimmerGain;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = resolvedTheme.filterFrequency;
+
+        shimmerOsc.connect(shimmerGain);
+        shimmerGain.connect(filter);
+        filter.connect(masterGain);
+
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = resolvedTheme.lfoFrequency;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = resolvedTheme.lfoDepth;
+        lfo.connect(lfoGain);
+        lfoGain.connect(baseOsc.frequency);
+
+        const ampLfo = ctx.createOscillator();
+        ampLfo.type = 'sine';
+        ampLfo.frequency.value = Math.max(0.02, resolvedTheme.lfoFrequency * 0.4);
+        const ampGain = ctx.createGain();
+        ampGain.gain.value = resolvedTheme.masterGain * 0.25;
+        ampLfo.connect(ampGain);
+        ampGain.connect(masterGain.gain);
+
+        baseOsc.start();
+        padOsc.start();
+        shimmerOsc.start();
+        lfo.start();
+        ampLfo.start();
+
+        this.backgroundMusic = {
+            masterGain,
+            baseOsc,
+            padOsc,
+            shimmerOsc,
+            baseGain,
+            padGain,
+            shimmerGain,
+            lfo,
+            lfoGain,
+            ampLfo,
+            ampGain,
+            filter,
+            theme: resolvedTheme
+        };
+    }
+
+    /**
+     * 更新背景音乐主题
+     */
+    setBackgroundMusicTheme(theme = {}) {
+        if (!this.backgroundMusic || !this.audioContext) {
+            this.startBackgroundMusic(theme);
+            return;
+        }
+
+        const resolvedTheme = this.normalizeMusicTheme(theme);
+        const ctx = this.audioContext;
+        const now = ctx.currentTime;
+
+        const {
+            masterGain,
+            baseOsc,
+            padOsc,
+            shimmerOsc,
+            baseGain,
+            padGain,
+            shimmerGain,
+            lfo,
+            lfoGain,
+            ampLfo,
+            ampGain,
+            filter
+        } = this.backgroundMusic;
+
+        masterGain.gain.setTargetAtTime(this.masterVolume * resolvedTheme.masterGain, now, 0.6);
+        baseOsc.frequency.setTargetAtTime(resolvedTheme.baseFrequency, now, 0.5);
+        padOsc.frequency.setTargetAtTime(resolvedTheme.padFrequency, now, 0.8);
+        shimmerOsc.frequency.setTargetAtTime(resolvedTheme.shimmerFrequency, now, 0.4);
+        baseGain.gain.setTargetAtTime(resolvedTheme.baseGain, now, 0.5);
+        padGain.gain.setTargetAtTime(resolvedTheme.padGain, now, 0.5);
+        shimmerGain.gain.setTargetAtTime(resolvedTheme.shimmerGain, now, 0.5);
+        filter.frequency.setTargetAtTime(resolvedTheme.filterFrequency, now, 0.5);
+
+        if (lfo) {
+            lfo.frequency.setTargetAtTime(resolvedTheme.lfoFrequency, now, 0.6);
+        }
+        if (lfoGain) {
+            lfoGain.gain.setTargetAtTime(resolvedTheme.lfoDepth, now, 0.6);
+        }
+        if (ampLfo) {
+            ampLfo.frequency.setTargetAtTime(Math.max(0.02, resolvedTheme.lfoFrequency * 0.4), now, 0.6);
+        }
+        if (ampGain) {
+            ampGain.gain.setTargetAtTime(resolvedTheme.masterGain * 0.25, now, 0.6);
+        }
+
+        this.backgroundMusic.theme = resolvedTheme;
+    }
+
+    /**
+     * 停止背景音乐
+     */
+    stopBackgroundMusic() {
+        if (!this.backgroundMusic) {
+            return;
+        }
+
+        const {
+            masterGain,
+            baseOsc,
+            padOsc,
+            shimmerOsc,
+            lfo,
+            ampLfo
+        } = this.backgroundMusic;
+
+        const ctx = this.audioContext;
+        const now = ctx ? ctx.currentTime : 0;
+
+        if (masterGain) {
+            masterGain.gain.setTargetAtTime(0.0001, now, 0.3);
+        }
+
+        [baseOsc, padOsc, shimmerOsc, lfo, ampLfo].forEach(node => {
+            if (node && typeof node.stop === 'function') {
+                try {
+                    node.stop(now + 0.35);
+                } catch (e) {
+                    // ignore repeated stop errors
+                }
+            }
+        });
+
+        this.backgroundMusic = null;
+    }
+
+    /**
+     * 归一化音乐主题参数
+     */
+    normalizeMusicTheme(theme = {}) {
+        const defaults = {
+            baseFrequency: 180,
+            padFrequency: 360,
+            shimmerFrequency: 720,
+            lfoFrequency: 0.08,
+            lfoDepth: 24,
+            masterGain: 0.32,
+            baseGain: 0.45,
+            padGain: 0.22,
+            shimmerGain: 0.05,
+            filterFrequency: 1400
+        };
+
+        const normalized = {};
+        Object.keys(defaults).forEach((key) => {
+            const upperKey = key.toUpperCase();
+            normalized[key] = theme[key] ?? theme[upperKey] ?? defaults[key];
+        });
+
+        return normalized;
     }
 
     /**

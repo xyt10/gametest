@@ -4,20 +4,24 @@
  */
 
 class Boss {
-    constructor(x, y) {
+    constructor(x, y, modifiers = {}) {
         this.x = x;
         this.y = y;
 
         // 从配置获取属性
         const config = GameConfig.BOSS;
-        this.maxHealth = config.HEALTH;
+        const healthMultiplier = modifiers.healthMultiplier || 1;
+        const damageMultiplier = modifiers.damageMultiplier || 1;
+        const scoreMultiplier = modifiers.scoreMultiplier || 1;
+
+        this.maxHealth = Math.round(config.HEALTH * healthMultiplier);
         this.health = this.maxHealth;
         this.speed = config.SPEED;
-        this.scoreValue = config.SCORE;
+        this.scoreValue = Math.round(config.SCORE * scoreMultiplier);
         this.width = config.WIDTH;
         this.height = config.HEIGHT;
         this.fireRate = config.FIRE_RATE;
-        this.damage = config.DAMAGE;
+        this.damage = config.DAMAGE * damageMultiplier;
 
         this.alive = true;
         this.lastFireTime = 0;

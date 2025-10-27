@@ -39,8 +39,12 @@ class GameHUD {
         ctx.fillText('分数: ' + this.gameScene.score, 10, 25);
 
         // 关卡
+        const levelConfig = this.gameScene.currentLevelConfig;
+        const levelName = levelConfig ? levelConfig.NAME : '未知';
         ctx.fillStyle = '#00ffff';
         ctx.fillText('关卡: ' + this.gameScene.stage, 10, 50);
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.85)';
+        ctx.fillText('难度: ' + levelName, 140, 50);
 
         // 等级
         ctx.fillStyle = '#ff00ff';
